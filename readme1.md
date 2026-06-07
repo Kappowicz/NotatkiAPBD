@@ -258,3 +258,8 @@ if (availableBed == null)
     [cite_start]// Komunikat błędu musi być jasny i jednoznaczny [cite: 62]
     return NotFound(new { message = "Brak wolnych łóżek dla wybranego oddziału i typu w danym terminie." });
 }
+
+
+dotnet new tool-manifest
+dotnet tool install dotnet-ef
+dotnet tool run dotnet-ef
