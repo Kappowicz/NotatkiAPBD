@@ -1,0 +1,39 @@
+using HospitalApi.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace HospitalApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class PatientsController : ControllerBase
+    {
+        private readonly HospitalDbContext _context;
+
+        public PatientsController(HospitalDbContext context)
+        {
+            _context = context;
+        }
+
+        // ZADANIE 2
+        [HttpGet]
+        public async Task<IActionResult> GetPatients([FromQuery] string? search)
+        {
+            var query = _context.Patients.AsQueryable();
+
+            // Filtrowanie z użyciem LIKE i wildcardów %, jeśli parametr search nie jest pusty
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var searchTerm = $"%{search}%";
+                query = query.Where(p => 
+                    EF.Functions.Like(p.FirstName, searchTerm) || 
+                    EF.Functions.Like(p.LastName, searchTerm));
+            }
+
+            // Pamiętaj, aby zmapować to na DTO zgodne z "GET.json" (tutaj zwracam wprost encje dla uproszczenia)
+            var patients = await query.ToListAsync();
+
+            return Ok(patients);
+        }
+    }
+}
