@@ -263,3 +263,114 @@ if (availableBed == null)
 dotnet new tool-manifest
 dotnet tool install dotnet-ef
 dotnet tool run dotnet-ef
+
+
+
+using HospitalApi.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace HospitalApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class PatientsController : ControllerBase
+    {
+        private readonly HospitalDbContext _context;
+
+        public PatientsController(HospitalDbContext context)
+        {
+            _context = context;
+        }
+
+        // ZADANIE 2
+        [HttpGet]
+        public async Task<IActionResult> GetPatients([FromQuery] string? search)
+        {
+            var query = _context.Patients.AsQueryable();
+
+            // Filtrowanie z użyciem LIKE i wildcardów %, jeśli parametr search nie jest pusty
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var searchTerm = $"%{search}%";
+                query = query.Where(p => 
+                    EF.Functions.Like(p.FirstName, searchTerm) || 
+                    EF.Functions.Like(p.LastName, searchTerm));
+            }
+
+            // Pamiętaj, aby zmapować to na DTO zgodne z "GET.json" (tutaj zwracam wprost encje dla uproszczenia)
+            var patients = await query.ToListAsync();
+
+            return Ok(patients);
+        }
+    }
+}
+
+public class BedAssignmentRequestDto
+{
+    public int WardId { get; set; }
+    public int BedTypeId { get; set; }
+    public DateTime From { get; set; }
+    public DateTime? To { get; set; }
+}
+
+
+        // ZADANIE 3
+        [HttpPost("{pesel}/bedassignments")]
+        public async Task<IActionResult> AssignBed(string pesel, [FromBody] BedAssignmentRequestDto request)
+        {
+            // 1. Sprawdzamy czy pacjent istnieje
+            var patientExists = await _context.Patients.AnyAsync(p => p.Pesel == pesel);
+            if (!patientExists)
+            {
+                return NotFound("Nie znaleziono pacjenta o podanym numerze PESEL.");
+            }
+
+            // 2. Szukamy dostępnego łóżka
+            var availableBed = await _context.Beds
+                .Where(b => b.Room.WardId == request.WardId && b.BedTypeId == request.BedTypeId)
+                .Where(b => !b.BedAssignments.Any(ba => 
+                    // Warunek sprawdzający nakładanie się dat
+                    (ba.From < request.To || request.To == null) && 
+                    (ba.To == null || ba.To > request.From)
+                ))
+                .FirstOrDefaultAsync();
+
+            // 3. Obsługa braku wolnego łóżka z czytelnym komunikatem (kod 404)
+            if (availableBed == null)
+            {
+                return NotFound($"Nie znaleziono wolnego łóżka typu {request.BedTypeId} na oddziale {request.WardId} we wskazanym okresie czasu.");
+            }
+
+            // 4. Przypisanie łóżka
+            var newAssignment = new BedAssignment
+            {
+                PatientPesel = pesel,
+                BedId = availableBed.Id,
+                From = request.From,
+                To = request.To
+            };
+
+            _context.BedAssignments.Add(newAssignment);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "Łóżko zostało pomyślnie przypisane.", BedId = availableBed.Id });
+        }
+
+
+using HospitalApi.Models;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Rejestracja DbContext
+builder.Services.AddDbContext<HospitalDbContext>(options =>
+    options.UseSqlServer("Twoj_Connection_String"));
+
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.MapControllers();
+app.Run();
+
